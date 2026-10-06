@@ -13,8 +13,8 @@ Técnico → página (senha da equipe) → função no Vercel → login Tupi (us
 |---|---|
 | `index.html` | Tela: login, busca de estações, botão Hard Reset com confirmação |
 | `api/login.js` / `api/logout.js` | Confere a senha da equipe e cria/remove a sessão (cookie assinado, 12 h) |
-| `api/stations.js` | Lista as estações da Tupi |
-| `api/reset.js` | Envia o Hard Reset |
+| `api/station.js` | Consulta o estado da estação (API pública `api.tupinambaenergia.com.br/station/{ID}`) |
+| `api/reset.js` | Confere de novo se não há recarga e só então envia o Hard Reset |
 | `api/_lib.js` | Login na Tupi, renovação do token, sessão |
 
 ## Antes de publicar
@@ -30,10 +30,10 @@ Técnico → página (senha da equipe) → função no Vercel → login Tupi (us
 
 | Variável | Valor |
 |---|---|
-| `TEAM_PASSWORD` | Fadel@Zon |
+| `TEAM_PASSWORD` | Senha que a equipe vai digitar na página |
 | `SESSION_SECRET` | Texto aleatório com 32+ caracteres (gere com `openssl rand -hex 32` ou um gerador de senhas) |
-| `TUPI_EMAIL` | du.matheux@gmail.com |
-| `TUPI_PASSWORD` | 136979@Ne |
+| `TUPI_EMAIL` | E-mail do usuário de serviço da Tupi |
+| `TUPI_PASSWORD` | Senha do usuário de serviço da Tupi |
 
 Opcionais (já têm valor padrão): `TUPI_API_URL` (`https://tupi-backend-bff.tupinrg.app/proxy-ocpp/api`) e `FIREBASE_API_KEY` (chave pública do painel Tupi).
 
@@ -43,9 +43,13 @@ Opcionais (já têm valor padrão): `TUPI_API_URL` (`https://tupi-backend-bff.tu
 
 ## Uso
 
-- Busque a estação pelo ID (ex.: `CPZON66`) ou pelo nome.
-- Clique em **Hard Reset** → confirme. A tela mostra se a estação respondeu `Accepted` ou `Rejected`.
-- Ponto verde = heartbeat nos últimos 15 minutos.
+1. A página pergunta **em qual estação você está** → digite o ID (ex.: `CPZON07`).
+2. Ela mostra o estado de cada conector.
+3. **Trava:** se algum conector estiver *Preparando*, *Carregando* ou *Pausado* (Preparing, Charging, SuspendedEV, SuspendedEVSE), o botão fica bloqueado. A mesma checagem é refeita no servidor no instante do envio, então não dá para burlar pela tela.
+4. Se não for possível confirmar o estado, o reset também fica bloqueado.
+5. Liberado → **Hard Reset** → confirmar. A tela mostra `Accepted` ou `Rejected`.
+
+Para mudar quais estados bloqueiam, crie a variável `BLOCK_STATES` (ex.: `Preparing,Charging,SuspendedEV,SuspendedEVSE,Finishing`).
 
 ## Segurança
 

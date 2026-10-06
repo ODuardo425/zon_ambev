@@ -116,3 +116,59 @@ export async function readBody(req) {
 }
 
 export const STATION_ID_RE = /^[A-Za-z0-9_.:\-]{1,64}$/;
+
+// ---------- Trava: estado da estação (API pública da Tupi) ----------
+
+const STATION_STATUS_URL = (
+  process.env.STATION_STATUS_URL || "https://api.tupinambaenergia.com.br/station"
+).replace(/\/$/, "");
+
+// Estados OCPP que indicam cliente usando a estação. Pode ser alterado pela variável BLOCK_STATES.
+const BLOCK_STATES = (process.env.BLOCK_STATES || "Preparing,Charging,SuspendedEV,SuspendedEVSE")
+  .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+
+export async function getStationStatus(stationId) {
+  const r = await fetch(`${STATION_STATUS_URL}/${encodeURIComponent(stationId)}`, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (r.status === 404) return { found: false };
+  if (!r.ok) throw new Error(`Não foi possível consultar o estado da estação (HTTP ${r.status})`);
+  const d = await r.json().catch(() => null);
+  if (!d || !(d.stationID || d.stationId)) return { found: false };
+
+  const plugs = (Array.isArray(d.connectedPlugs) ? d.connectedPlugs : []).map((p) => ({
+    id: p.connectorID ?? p.connectorId ?? null,
+    name: p.name || "",
+    state: p.stateName || "Desconhecido",
+    percentage: p.meterValues?.percentage ?? null,
+  }));
+  const isBlocking = (s) => BLOCK_STATES.includes(String(s || "").toLowerCase());
+  const blockingPlugs = plugs.filter((p) => isBlocking(p.state));
+  const overall = d.stateName || null;
+  // Sem informação de conectores e sem estado geral: não dá para garantir que está livre
+  const unknown = plugs.length === 0 && !overall;
+
+  return {
+    found: true,
+    stationId: d.stationID || d.stationId,
+    name: d.name || "",
+    address: d.address || "",
+    overall,
+    plugs,
+    blockingPlugs,
+    inUse: blockingPlugs.length > 0 || isBlocking(overall),
+    unknown,
+  };
+}
+
+const STATE_PT = {
+  preparing: "preparando", charging: "carregando", suspendedev: "pausada pelo veículo", suspendedevse: "pausada pela estação",
+};
+
+export function lockReason(st) {
+  if (st.unknown) return "Não foi possível confirmar se há recarga em andamento.";
+  if (!st.inUse) return null;
+  const list = st.blockingPlugs.map((p) => `conector ${p.id ?? "?"} (${STATE_PT[String(p.state).toLowerCase()] || p.state})`).join(", ");
+  return `Há cliente usando a estação${list ? ": " + list : ""}.`;
+}
