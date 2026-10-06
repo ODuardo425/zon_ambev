@@ -127,46 +127,93 @@ const STATION_STATUS_URL = (
 const BLOCK_STATES = (process.env.BLOCK_STATES || "Preparing,Charging,SuspendedEV,SuspendedEVSE")
   .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
-export async function getStationStatus(stationId) {
+const isBlocking = (s) => BLOCK_STATES.includes(String(s || "").toLowerCase());
+
+function summarize(base, plugs, overall) {
+  const blockingPlugs = plugs.filter((p) => isBlocking(p.state));
+  return {
+    found: true,
+    ...base,
+    overall,
+    plugs,
+    blockingPlugs,
+    inUse: blockingPlugs.length > 0 || isBlocking(overall),
+    unknown: plugs.length === 0 && !overall && !base.disconnected,
+  };
+}
+
+// 1ª opção: API pública (mesma do app). Pode recusar chamadas de servidores (HTTP 403).
+async function fromPublicApi(stationId) {
   const r = await fetch(`${STATION_STATUS_URL}/${encodeURIComponent(stationId)}`, {
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json, text/plain, */*",
+      "Accept-Language": "pt-BR,pt;q=0.9",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36",
+    },
     cache: "no-store",
   });
   if (r.status === 404) return { found: false };
-  if (!r.ok) throw new Error(`Não foi possível consultar o estado da estação (HTTP ${r.status})`);
+  if (!r.ok) throw new Error(`API pública HTTP ${r.status}`);
   const d = await r.json().catch(() => null);
   if (!d || !(d.stationID || d.stationId)) return { found: false };
-
   const plugs = (Array.isArray(d.connectedPlugs) ? d.connectedPlugs : []).map((p) => ({
     id: p.connectorID ?? p.connectorId ?? null,
     name: p.name || "",
     state: p.stateName || "Desconhecido",
     percentage: p.meterValues?.percentage ?? null,
   }));
-  const isBlocking = (s) => BLOCK_STATES.includes(String(s || "").toLowerCase());
-  const blockingPlugs = plugs.filter((p) => isBlocking(p.state));
-  const overall = d.stateName || null;
-  // Sem informação de conectores e sem estado geral: não dá para garantir que está livre
-  const unknown = plugs.length === 0 && !overall;
-
-  return {
-    found: true,
-    stationId: d.stationID || d.stationId,
-    name: d.name || "",
-    address: d.address || "",
-    overall,
+  return summarize(
+    { stationId: d.stationID || d.stationId, name: d.name || "", address: d.address || "", source: "public" },
     plugs,
-    blockingPlugs,
-    inUse: blockingPlugs.length > 0 || isBlocking(overall),
-    unknown,
-  };
+    d.stateName || null
+  );
+}
+
+// 2ª opção: lista autenticada do painel Tupi (mesma tela "Stations > Connected").
+async function fromTupiPanel(stationId) {
+  const r = await tupiRequest("GET", "stations");
+  if (!r.ok) throw new Error(`painel Tupi HTTP ${r.status}`);
+  const list = Array.isArray(r.data) ? r.data : r.data?.stations || r.data?.data || [];
+  const st = list.find((s) => String(s?.stationId || "").toUpperCase() === stationId.toUpperCase());
+  if (!st) return { found: false };
+  const disconnected = !!st.disconnectionTimestamp;
+  const plugs = disconnected ? [] : (Array.isArray(st.connectors) ? st.connectors : []).map((c) => ({
+    id: c.connectorId ?? c.id ?? null,
+    name: "",
+    state: c.lastStatus || c.status || "Desconhecido",
+    percentage: null,
+  }));
+  return summarize(
+    { stationId: st.stationId, name: st.name || "", address: "", source: "panel", disconnected },
+    plugs,
+    disconnected ? "Disconnected" : null
+  );
+}
+
+export async function getStationStatus(stationId) {
+  let publicError = null;
+  try {
+    const st = await fromPublicApi(stationId);
+    if (st.found) return st;
+  } catch (e) {
+    publicError = e.message;
+  }
+  try {
+    return await fromTupiPanel(stationId);
+  } catch (e) {
+    throw new Error(
+      `Não foi possível consultar o estado da estação (${publicError ? publicError + "; " : ""}${e.message})`
+    );
+  }
 }
 
 const STATE_PT = {
-  preparing: "preparando", charging: "carregando", suspendedev: "pausada pelo veículo", suspendedevse: "pausada pela estação",
+  disconnected: "desconectada", preparing: "preparando", charging: "carregando", suspendedev: "pausada pelo veículo", suspendedevse: "pausada pela estação",
 };
 
 export function lockReason(st) {
+  if (st.disconnected) return "A estação está desconectada da Tupi, então o comando não chegaria até ela.";
   if (st.unknown) return "Não foi possível confirmar se há recarga em andamento.";
   if (!st.inUse) return null;
   const list = st.blockingPlugs.map((p) => `conector ${p.id ?? "?"} (${STATE_PT[String(p.state).toLowerCase()] || p.state})`).join(", ");
