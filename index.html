@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Zoncharge · Hard Reset</title>
+<style>
+  :root{
+    --bg:#f4f5f8; --card:#fff; --text:#1c1f26; --muted:#6b7280; --line:#e5e7eb;
+    --accent:#1d4ed8; --accent-ink:#fff; --danger:#c2410c; --danger-bg:#fff7ed;
+    --ok:#15803d; --ok-bg:#f0fdf4; --err:#b91c1c; --err-bg:#fef2f2; --off:#9ca3af;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1115; --card:#181b22; --text:#e7e9ee; --muted:#9aa1ad; --line:#2a2f3a;
+      --accent:#3b82f6; --danger:#fb923c; --danger-bg:#2a1a10;
+      --ok:#4ade80; --ok-bg:#10241a; --err:#f87171; --err-bg:#2a1414; --off:#6b7280;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line)}
+  header h1{font-size:17px;margin:0}
+  header h1 span{color:var(--accent)}
+  main{max-width:860px;margin:0 auto;padding:20px 16px 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+  input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);font-size:15px}
+  input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  button{font:inherit;border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .primary{background:var(--accent);color:var(--accent-ink);font-weight:600}
+  .ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  .danger{background:var(--danger);color:#fff;font-weight:600}
+  .hidden{display:none!important}
+  #login{max-width:360px;margin:12vh auto 0}
+  #login h2{margin:0 0 4px;font-size:20px}
+  #login p{margin:0 0 16px;color:var(--muted)}
+  #login form{display:grid;gap:10px}
+  .msg{padding:10px 12px;border-radius:8px;margin-top:10px;font-size:14px}
+  .msg.err{background:var(--err-bg);color:var(--err)}
+  .msg.ok{background:var(--ok-bg);color:var(--ok)}
+  .toolbar{display:flex;gap:10px;margin-bottom:12px}
+  .toolbar input{flex:1}
+  .count{color:var(--muted);font-size:13px;margin:0 2px 8px}
+  ul.list{list-style:none;margin:0;padding:0}
+  ul.list li{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 4px;border-top:1px solid var(--line)}
+  ul.list li:first-child{border-top:0}
+  .st-name{font-weight:600;word-break:break-word}
+  .st-meta{color:var(--muted);font-size:13px;display:flex;gap:10px;flex-wrap:wrap;margin-top:2px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px;background:var(--off)}
+  .dot.on{background:var(--ok)}
+  .empty{color:var(--muted);text-align:center;padding:28px 0}
+  #log{margin-top:16px}
+  #log h3{font-size:14px;margin:0 0 8px;color:var(--muted);font-weight:600}
+  #logItems > div{font-size:14px;padding:8px 10px;border-radius:8px;margin:0 0 6px}
+  dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);padding:20px;max-width:420px;width:calc(100% - 32px)}
+  dialog::backdrop{background:rgba(0,0,0,.45)}
+  dialog h3{margin:0 0 8px}
+  dialog .warn{background:var(--danger-bg);color:var(--danger);padding:10px 12px;border-radius:8px;font-size:14px;margin:12px 0}
+  dialog .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+  @media (max-width:560px){ ul.list li{flex-direction:column;align-items:stretch} ul.list li button{width:100%} }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>Zoncharge</span> · Hard Reset de estações</h1>
+  <button id="logoutBtn" class="ghost hidden">Sair</button>
+</header>
+
+<main>
+  <!-- LOGIN -->
+  <section id="login" class="card">
+    <h2>Acesso da equipe</h2>
+    <p>Digite a senha da equipe para continuar.</p>
+    <form id="loginForm">
+      <input id="pwd" type="password" placeholder="Senha da equipe" autocomplete="current-password" required>
+      <button class="primary" type="submit">Entrar</button>
+    </form>
+    <div id="loginMsg" class="msg err hidden"></div>
+  </section>
+
+  <!-- APP -->
+  <section id="app" class="hidden">
+    <div class="card">
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Buscar por ID (ex.: CPZON66) ou nome da estação">
+        <button id="reloadBtn" class="ghost" title="Atualizar lista">Atualizar</button>
+      </div>
+      <div id="count" class="count"></div>
+      <ul id="list" class="list"></ul>
+    </div>
+    <div id="log" class="hidden">
+      <h3>Comandos enviados nesta sessão</h3>
+      <div id="logItems"></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="confirm">
+  <h3>Confirmar Hard Reset</h3>
+  <div id="cName" class="st-name"></div>
+  <div id="cId" class="st-meta"></div>
+  <div class="warn">A estação será reiniciada imediatamente. Se houver recarga em andamento, ela será interrompida.</div>
+  <div class="actions">
+    <button id="cCancel" class="ghost" type="button">Cancelar</button>
+    <button id="cOk" class="danger" type="button">Enviar Hard Reset</button>
+  </div>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let stations = [];
+let pending = null;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { credentials: "same-origin", headers: { "Content-Type": "application/json" }, ...opts });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && path !== "/api/login") { showLogin("Sua sessão expirou. Entre novamente."); throw new Error("401"); }
+  if (!r.ok) throw new Error(data.error || `Erro ${r.status}`);
+  return data;
+}
+
+function showLogin(msg) {
+  $("app").classList.add("hidden"); $("logoutBtn").classList.add("hidden");
+  $("login").classList.remove("hidden");
+  $("loginMsg").textContent = msg || ""; $("loginMsg").classList.toggle("hidden", !msg);
+  $("pwd").focus();
+}
+
+function showApp() {
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden"); $("logoutBtn").classList.remove("hidden");
+  loadStations();
+}
+
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.submitter; btn.disabled = true;
+  try {
+    await api("/api/login", { method: "POST", body: JSON.stringify({ password: $("pwd").value }) });
+    $("pwd").value = ""; showApp();
+  } catch (err) {
+    $("loginMsg").textContent = err.message; $("loginMsg").classList.remove("hidden");
+  } finally { btn.disabled = false; }
+});
+
+$("logoutBtn").addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); showLogin(); });
+
+function isOnline(s) {
+  return s.lastHeartbeat && (Date.now() - new Date(s.lastHeartbeat).getTime()) < 15 * 60 * 1000;
+}
+function fmt(d) { return d ? new Date(d).toLocaleString("pt-BR") : "sem heartbeat"; }
+function esc(t) { return String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+
+async function loadStations() {
+  $("list").innerHTML = '<li class="empty">Carregando estações…</li>'; $("count").textContent = "";
+  try {
+    const data = await api("/api/stations");
+    stations = data.stations || [];
+    render();
+  } catch (err) {
+    if (err.message !== "401") $("list").innerHTML = `<li class="empty">${esc(err.message)}</li>`;
+  }
+}
+
+function render() {
+  const q = $("search").value.trim().toLowerCase();
+  const items = stations.filter((s) => !q || s.stationId.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
+  $("count").textContent = `${items.length} de ${stations.length} estações`;
+  if (!items.length) { $("list").innerHTML = '<li class="empty">Nenhuma estação encontrada.</li>'; return; }
+  $("list").innerHTML = items.slice(0, 200).map((s) => {
+    const conns = s.connectors.filter((c) => c.status).map((c) => `${esc(c.status)}${c.id != null ? " (" + esc(c.id) + ")" : ""}`).join(" · ");
+    return `<li>
+      <div>
+        <div class="st-name">${esc(s.name || s.stationId)}</div>
+        <div class="st-meta">
+          <span><span class="dot ${isOnline(s) ? "on" : ""}"></span>${esc(s.stationId)}</span>
+          <span>Último heartbeat: ${esc(fmt(s.lastHeartbeat))}</span>
+          ${conns ? `<span>${conns}</span>` : ""}
+        </div>
+      </div>
+      <button class="danger" data-id="${esc(s.stationId)}">Hard Reset</button>
+    </li>`;
+  }).join("");
+}
+
+$("search").addEventListener("input", render);
+$("reloadBtn").addEventListener("click", loadStations);
+
+$("list").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-id]"); if (!btn) return;
+  pending = stations.find((s) => s.stationId === btn.dataset.id);
+  if (!pending) return;
+  $("cName").textContent = pending.name || pending.stationId;
+  $("cId").textContent = "ID: " + pending.stationId + (isOnline(pending) ? "" : " · atenção: estação parece offline");
+  $("confirm").showModal();
+});
+
+$("cCancel").addEventListener("click", () => { pending = null; $("confirm").close(); });
+
+$("cOk").addEventListener("click", async () => {
+  if (!pending) return;
+  const st = pending; const btn = $("cOk");
+  btn.disabled = true; btn.textContent = "Enviando…";
+  try {
+    const r = await api("/api/reset", { method: "POST", body: JSON.stringify({ stationId: st.stationId }) });
+    addLog(st, r.accepted, r.accepted ? "Comando aceito pela estação (Accepted)" : `Estação respondeu: ${r.result}`);
+  } catch (err) {
+    if (err.message !== "401") addLog(st, false, err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Enviar Hard Reset";
+    pending = null; $("confirm").close();
+  }
+});
+
+function addLog(st, ok, text) {
+  $("log").classList.remove("hidden");
+  const div = document.createElement("div");
+  div.className = "msg " + (ok ? "ok" : "err");
+  div.textContent = `${new Date().toLocaleTimeString("pt-BR")} · ${st.stationId} (${st.name || "—"}): ${text}`;
+  $("logItems").prepend(div);
+}
+
+// Se já houver sessão válida, entra direto
+fetch("/api/stations", { credentials: "same-origin" }).then((r) => {
+  if (r.ok) { showApp(); } else { showLogin(); }
+}).catch(() => showLogin());
+</script>
+</body>
+</html>
