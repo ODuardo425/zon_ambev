@@ -29,7 +29,7 @@
   .sub{margin:0 0 16px;color:var(--muted)}
   input{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);font-size:16px}
   input:focus{outline:2px solid var(--accent);outline-offset:-1px}
-  #stationInput{text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+  #stationInput{font-weight:600}
   button{font:inherit;border:0;border-radius:8px;padding:11px 16px;cursor:pointer}
   button:disabled{opacity:.5;cursor:not-allowed}
   .primary{background:var(--accent);color:var(--accent-ink);font-weight:600}
@@ -65,6 +65,14 @@
   dialog .warn{background:var(--danger-bg);color:var(--danger);padding:10px 12px;border-radius:8px;font-size:14px;margin:12px 0}
   dialog .actions{justify-content:flex-end;margin-top:14px}
   dialog .actions button{flex:none}
+  .count{color:var(--muted);font-size:13px;margin:14px 2px 6px}
+  ul.stlist{list-style:none;margin:0;padding:0;max-height:60vh;overflow-y:auto;border-top:1px solid var(--line)}
+  ul.stlist li{border-bottom:1px solid var(--line)}
+  ul.stlist button{width:100%;text-align:left;background:none;color:var(--text);border-radius:0;padding:11px 4px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+  ul.stlist button:hover{background:var(--bg)}
+  .li-name{font-weight:600;font-size:14px;word-break:break-word}
+  .li-id{color:var(--muted);font-size:12px}
+  .empty{color:var(--muted);text-align:center;padding:20px 0;font-size:14px}
 </style>
 </head>
 <body>
@@ -88,12 +96,14 @@
   <!-- 2. QUAL ESTAÇÃO -->
   <section id="ask" class="card hidden">
     <h2>Em qual estação você está?</h2>
-    <p class="sub">Digite o ID que aparece na estação (ex.: CPZON07).</p>
+    <p class="sub">Busque pelo nome ou pelo ID que aparece na estação (ex.: CPZON07) e toque nela.</p>
     <form id="askForm" class="row">
-      <input id="stationInput" placeholder="CPZON07" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
+      <input id="stationInput" type="search" placeholder="Nome, cidade ou ID" autocomplete="off" spellcheck="false" required>
       <button class="primary" type="submit">Consultar</button>
     </form>
     <div id="askMsg" class="msg err hidden"></div>
+    <div id="listCount" class="count"></div>
+    <ul id="stList" class="stlist"></ul>
   </section>
 
   <!-- 3. ESTAÇÃO -->
@@ -169,13 +179,68 @@ $("loginForm").addEventListener("submit", async (e) => {
 $("logoutBtn").addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); current = null; show("login"); });
 
 // ---------- Qual estação ----------
-function goAsk() { current = null; show("ask"); msg("askMsg"); $("stationInput").focus(); }
+let allStations = null;
+
+function goAsk() {
+  current = null; show("ask"); msg("askMsg"); $("stationInput").focus();
+  if (!allStations) loadList(); else renderList();
+}
 $("changeBtn").addEventListener("click", () => { $("stationInput").value = ""; goAsk(); });
+
+async function loadList() {
+  $("stList").innerHTML = '<li class="empty">Carregando estações…</li>'; $("listCount").textContent = "";
+  try {
+    const d = await api("/api/station");
+    allStations = d.stations || [];
+    renderList();
+  } catch (err) {
+    if (!err.silent) $("stList").innerHTML = `<li class="empty">Não foi possível carregar a lista (${esc(err.message)}). Você ainda pode digitar o ID e clicar em Consultar.</li>`;
+  }
+}
+
+const norm = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+function filtered() {
+  const q = norm($("stationInput").value.trim());
+  if (!allStations) return [];
+  if (!q) return allStations;
+  const words = q.split(/\s+/);
+  return allStations.filter((s) => { const h = norm(s.stationId + " " + s.name); return words.every((w) => h.includes(w)); });
+}
+
+function listBadge(s) {
+  if (s.disconnected) return '<span class="badge">Desconectada</span>';
+  if (s.inUse) return '<span class="badge busy">Em uso</span>';
+  if (s.states.some((x) => x.toLowerCase() === "available")) return '<span class="badge free">Livre</span>';
+  return s.states.length ? `<span class="badge">${esc(STATE_PT[s.states[0].toLowerCase()] || s.states[0])}</span>` : "";
+}
+
+function renderList() {
+  const items = filtered();
+  $("listCount").textContent = allStations ? `${items.length} de ${allStations.length} estações` : "";
+  $("stList").innerHTML = items.length
+    ? items.slice(0, 300).map((s) => `<li><button type="button" data-id="${esc(s.stationId)}">
+        <span><div class="li-name">${esc(s.name || s.stationId)}</div><div class="li-id">${esc(s.stationId)}</div></span>
+        ${listBadge(s)}</button></li>`).join("")
+    : '<li class="empty">Nenhuma estação encontrada. Se souber o ID, digite e clique em Consultar.</li>';
+}
+
+$("stationInput").addEventListener("input", renderList);
+
+$("stList").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-id]"); if (!b) return;
+  msg("askMsg");
+  try { await loadStation(b.dataset.id); }
+  catch (err) { if (!err.silent) msg("askMsg", err.message); }
+});
 
 $("askForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const id = $("stationInput").value.trim().toUpperCase().replace(/\s+/g, "");
-  if (!id) return;
+  const typed = $("stationInput").value.trim();
+  if (!typed) return;
+  // Se a busca deixou só uma estação na lista, abre ela; senão usa o texto como ID
+  const f = filtered();
+  const id = f.length === 1 ? f[0].stationId : typed.toUpperCase().replace(/\s+/g, "");
   const btn = e.submitter; btn.disabled = true; btn.textContent = "Consultando…"; msg("askMsg");
   try { await loadStation(id); }
   catch (err) { if (!err.silent) msg("askMsg", err.message); }
